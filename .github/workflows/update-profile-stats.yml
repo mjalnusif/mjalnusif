@@ -1,0 +1,48 @@
+name: Update profile stats
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate stats card from GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          USERNAME="${{ github.repository_owner }}"
+          followers=$(gh api "/users/$USERNAME" --jq '.followers')
+          repos=$(gh api "/users/$USERNAME" --jq '.public_repos')
+          stars=$(gh api --paginate "/users/$USERNAME/repos?per_page=100&type=owner" --jq '.[].stargazers_count' | awk '{sum+=$1} END {print sum+0}')
+
+          cat > github-stats.svg <<SVG
+          <svg xmlns="http://www.w3.org/2000/svg" width="420" height="160" viewBox="0 0 420 160" role="img" aria-label="GitHub profile stats">
+            <rect width="100%" height="100%" fill="#0d1117"/>
+            <text x="20" y="40" fill="#c9d1d9" font-size="18" font-family="Segoe UI, Ubuntu, sans-serif">GitHub Stats: $USERNAME</text>
+            <text x="20" y="80" fill="#58a6ff" font-size="16" font-family="Segoe UI, Ubuntu, sans-serif">Followers: $followers</text>
+            <text x="20" y="110" fill="#58a6ff" font-size="16" font-family="Segoe UI, Ubuntu, sans-serif">Public repos: $repos</text>
+            <text x="20" y="140" fill="#58a6ff" font-size="16" font-family="Segoe UI, Ubuntu, sans-serif">Total stars: $stars</text>
+          </svg>
+          SVG
+
+      - name: Commit and push updates
+        run: |
+          if git diff --quiet -- github-stats.svg; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add github-stats.svg
+          git commit -m "chore: update profile stats card"
+          git push
